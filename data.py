@@ -3,8 +3,43 @@ import numpy as np
 
 import requests
 import json
+from dataclasses import dataclass
 
 import sqlite3
+
+
+@dataclass
+class dataset_details:
+    datasetId: str
+    comments: str
+
+@dataclass
+class gov_sg_data_ref:
+    hdb = dataset_details(
+        datasetId = 'd_8b84c4ee58e3cfc0ece0d773c8ca6abc',
+        comments = '2017-01 onwards'
+    )
+
+    hdb0 = dataset_details(
+        datasetId = 'd_ebc5ab87086db484f88045b47411ebc5',
+        comments = '1990-01 to 1999-12'
+    )
+
+    hdb1 = dataset_details(
+        datasetId = 'd_43f493c6c50d54243cc1eab0df142d6a',
+        comments = '2000-01 to 2012-02'
+    )
+
+    hdb2 = dataset_details(
+        datasetId = 'd_2d5ff9ea31397b66239f245f57751537',
+        comments = '2012-03 to 2014-12'
+    )
+
+    hdb3 = dataset_details(
+        datasetId = 'd_ea9ed51da2787afaf8e51f827c304208',
+        comments = '2015-01 to 2016-12'
+    )
+
 
 def main():
     ...
@@ -28,6 +63,7 @@ def database_setup():
             resale_price FLOAT
         );
         """
+        con.execute(table_creation)
 
 
 def gov_data_puller(
