@@ -88,5 +88,13 @@ def parse_remaining_lease(
     return leases[0] * 12 + leases[1]
 
 
+def parse_transaction_month(
+        month: pd.Series
+    ) -> pd.Series:
+    dates = month.str.split('-', expand=True)
+    dates = dates.astype(int)
+    return dates[0] * 12 + dates[1]
+
+
 if __name__ == '__main__':
     main()
