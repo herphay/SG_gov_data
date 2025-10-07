@@ -79,6 +79,14 @@ def gov_data_puller(
     return pd.read_csv(result['data']['url'])
 
 
+def parse_remaining_lease(
+        remaining_lease: pd.Series
+    ) -> pd.Series:
+    leases = remaining_lease.str.split('years', expand=True)
+    leases[1] = leases[1].str.split(expand=True).fillna(0)[0]
+    leases = leases.astype(int)
+    return leases[0] * 12 + leases[1]
+
 
 if __name__ == '__main__':
     main()
