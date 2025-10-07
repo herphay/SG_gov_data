@@ -96,5 +96,12 @@ def parse_transaction_month(
     return dates[0] * 12 + dates[1]
 
 
+def find_lease_start_date(
+        transaction_time: pd.Series,
+        remaining_lease: pd.Series,
+    ) -> pd.Series:
+    return transaction_time - (99 * 12 - remaining_lease)
+
+
 if __name__ == '__main__':
     main()
