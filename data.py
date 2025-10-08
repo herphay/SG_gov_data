@@ -96,11 +96,41 @@ def parse_transaction_month(
     return dates[0] * 12 + dates[1]
 
 
-def find_lease_start_date(
-        transaction_time: pd.Series,
-        remaining_lease: pd.Series,
-    ) -> pd.Series:
-    return transaction_time - (99 * 12 - remaining_lease)
+def find_lease_start_date() -> pd.DataFrame:
+    latest_resale = gov_data_puller(datasetId='d_8b84c4ee58e3cfc0ece0d773c8ca6abc')
+    latest_resale['rlease_mth'] = parse_remaining_lease(latest_resale['remaining_lease'])
+    latest_resale['tdate_mth'] = parse_transaction_month(latest_resale['month'])
+    latest_resale['lease_start_mth'] =  latest_resale['tdate_mth'] - \
+                                        (99 * 12 - latest_resale['rlease_mth'])
+    std_lease_start =  latest_resale.groupby(['street_name', 'block'])['lease_start_mth'].\
+                                     unique().apply(find_median_lease_start).reset_index()
+    # a = pd.merge(latest_resale, std_lease_start, how='left', on=['street_name', 'block'])
+    return std_lease_start
+
+
+def find_median_lease_start(
+        start_dates: np.ndarray
+    ) -> int:
+    """
+    start_dates should be a sorted list of int representation of the lease start date
+    """
+    start_dates = start_dates.tolist()
+    if (nums := len(start_dates)) == 1:
+        return start_dates[0]
+    else:
+        i = 0
+        in_conseq = False
+        for _ in range(nums - 1):
+            if start_dates[i + 1] - start_dates[i] == 1:
+                in_conseq = True
+                i += 1
+            elif in_conseq:
+                del start_dates[i + 1:]
+                break
+            else:
+                del start_dates[i]
+
+        return int(np.median(start_dates))
 
 
 if __name__ == '__main__':
