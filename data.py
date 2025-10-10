@@ -102,8 +102,14 @@ def find_lease_start_date() -> pd.DataFrame:
     latest_resale['tdate_mth'] = parse_transaction_month(latest_resale['month'])
     latest_resale['lease_start_mth'] =  latest_resale['tdate_mth'] - \
                                         (99 * 12 - latest_resale['rlease_mth'])
+    # Get self defined median
     std_lease_start =  latest_resale.groupby(['street_name', 'block'])['lease_start_mth'].\
                                      unique().apply(find_median_lease_start).reset_index()
+    
+    # get weighted avg start
+    
+
+    # To merge
     # a = pd.merge(latest_resale, std_lease_start, how='left', on=['street_name', 'block'])
     return std_lease_start
 
@@ -114,23 +120,24 @@ def find_median_lease_start(
     """
     start_dates should be a sorted list of int representation of the lease start date
     """
-    start_dates = start_dates.tolist()
-    if (nums := len(start_dates)) == 1:
-        return start_dates[0]
-    else:
-        i = 0
-        in_conseq = False
-        for _ in range(nums - 1):
-            if start_dates[i + 1] - start_dates[i] == 1:
-                in_conseq = True
-                i += 1
-            elif in_conseq:
-                del start_dates[i + 1:]
-                break
-            else:
-                del start_dates[i]
+    deltas = np.diff(start_dates)
+    # start_dates = start_dates.tolist()
+    # if (nums := len(start_dates)) == 1:
+    #     return start_dates[0]
+    # else:
+    #     i = 0
+    #     in_conseq = False
+    #     for _ in range(nums - 1):
+    #         if start_dates[i + 1] - start_dates[i] == 1:
+    #             in_conseq = True
+    #             i += 1
+    #         elif in_conseq:
+    #             del start_dates[i + 1:]
+    #             break
+    #         else:
+    #             del start_dates[i]
 
-        return int(np.median(start_dates))
+    #     return int(np.median(start_dates))
 
 
 if __name__ == '__main__':
