@@ -96,21 +96,39 @@ def parse_transaction_month(
     return dates[0] * 12 + dates[1]
 
 
-def find_lease_start_date() -> pd.DataFrame:
+def find_lease_start_date(
+        method: str = 'weighted_avg'
+    ) -> pd.DataFrame:
     latest_resale = gov_data_puller(datasetId='d_8b84c4ee58e3cfc0ece0d773c8ca6abc')
     latest_resale['rlease_mth'] = parse_remaining_lease(latest_resale['remaining_lease'])
     latest_resale['tdate_mth'] = parse_transaction_month(latest_resale['month'])
     latest_resale['lease_start_mth'] =  latest_resale['tdate_mth'] - \
                                         (99 * 12 - latest_resale['rlease_mth'])
-    # Get self defined median
-    std_lease_start =  latest_resale.groupby(['street_name', 'block'])['lease_start_mth'].\
-                                     unique().apply(find_median_lease_start).reset_index()
     
-    # get weighted avg start
+    # create lease start group
+    grpdx = ['street_name', 'block']
+    lease_start_grp = latest_resale.groupby(grpdx)['lease_start_mth']
     
+    match method:
+        # Get self defined median
+        case 'unique_median':
+            std_lease_start =  lease_start_grp.unique().apply(find_median_lease_start).reset_index()
+
+        # get weighted avg start
+        case 'weighted_avg':
+            sl_freq = lease_start_grp.value_counts().reset_index()
+            sl_freq['prod'] = sl_freq['lease_start_mth'] * sl_freq['count']
+            sl_freq = sl_freq.groupby(grpdx)
+            sl_freq = (sl_freq['prod'].sum() / sl_freq['count'].sum()).round().astype(int)
+            std_lease_start = sl_freq.reset_index()
+        
+        # get most frequent
+        case 'mode':
+            ...
+
 
     # To merge
-    # a = pd.merge(latest_resale, std_lease_start, how='left', on=['street_name', 'block'])
+    # a = pd.merge(latest_resale, std_lease_start, how='left', on=grpdx)
     return std_lease_start
 
 
@@ -120,7 +138,28 @@ def find_median_lease_start(
     """
     start_dates should be a sorted list of int representation of the lease start date
     """
+    # If there is only 1 lease start date
+    if start_dates.size == 1:
+        return start_dates[0]
+    
+    # The sort will affect underlying np arrays -> the arrays in the df are passed by reference
+    start_dates.sort()
     deltas = np.diff(start_dates)
+
+    # If all lease starts are in the same conseq run
+    if (deltas == 1).all():
+        return np.median(start_dates)
+    
+    current_run_pos = 0
+    current_run_len = 1
+    max_run_pos = 0
+    max_run_len = 1
+
+    for i in range(deltas.size):
+        if deltas[i] == 1:
+            current_run_len += 1
+        else:
+            if current_run_len > 
     # start_dates = start_dates.tolist()
     # if (nums := len(start_dates)) == 1:
     #     return start_dates[0]
