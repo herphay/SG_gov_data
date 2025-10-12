@@ -121,11 +121,15 @@ def find_lease_start_date(
             sl_freq = sl_freq.groupby(grpdx)
             sl_freq = (sl_freq['prod'].sum() / sl_freq['count'].sum()).round().astype(int)
             std_lease_start = sl_freq.reset_index()
+            std_lease_start.columns = grpdx + ['lease_start_mth']
         
         # get most frequent
         case 'mode':
-            ...
-
+            sl_freq = lease_start_grp.value_counts().reset_index()
+            max_count = sl_freq.groupby(grpdx)['count'].transform('max')
+            sl_freq = sl_freq.loc[sl_freq['count'] == max_count]
+            sl_freq = sl_freq.sort_values(grpdx + ['lease_start_mth'])
+            std_lease_start = sl_freq.drop_duplicates(grpdx)[grpdx + ['lease_start_mth']]
 
     # To merge
     # a = pd.merge(latest_resale, std_lease_start, how='left', on=grpdx)
@@ -149,7 +153,6 @@ def find_median_lease_start(
     # The sort will affect underlying np arrays -> the arrays in the df are passed by reference
     start_dates.sort()
     deltas = np.diff(start_dates)
-    print(deltas)
 
     # If all lease starts are in the same conseq run
     if (deltas == 1).all():
@@ -176,7 +179,7 @@ def find_median_lease_start(
         # Update a new current run (last pos and delta == 1 will get updated but irrelevant)
         current_run_pos = i + 1
         current_run_len = 1
-    print(max_run_pos, max_run_len)
+        
     return round(np.median(start_dates[max_run_pos:max_run_pos + max_run_len]))
     # start_dates = start_dates.tolist()
     # if (nums := len(start_dates)) == 1:
