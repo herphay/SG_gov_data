@@ -111,7 +111,7 @@ def find_lease_start_date(
     
     match method:
         # Get self defined median
-        case 'unique_median':
+        case 'longest_median':
             std_lease_start =  lease_start_grp.unique().apply(find_median_lease_start).reset_index()
 
         # get weighted avg start
@@ -136,7 +136,11 @@ def find_median_lease_start(
         start_dates: np.ndarray
     ) -> int:
     """
-    start_dates should be a sorted list of int representation of the lease start date
+    start_dates is the int representation (yyyy-mm converted to mth) of the lease start date
+
+    Finds the median lease start date in the longest conseq. run of lease starts
+     - If multiple runs have the same length, take the earlier run 
+     - (biased to give lower remaining lease)
     """
     # If there is only 1 lease start date
     if start_dates.size == 1:
@@ -145,21 +149,35 @@ def find_median_lease_start(
     # The sort will affect underlying np arrays -> the arrays in the df are passed by reference
     start_dates.sort()
     deltas = np.diff(start_dates)
+    print(deltas)
 
     # If all lease starts are in the same conseq run
     if (deltas == 1).all():
-        return np.median(start_dates)
+        return round(np.median(start_dates))
     
     current_run_pos = 0
     current_run_len = 1
     max_run_pos = 0
     max_run_len = 1
 
-    for i in range(deltas.size):
+    last_pos = deltas.size - 1
+    for i in range(last_pos + 1):
+        # If run is still ongoing
         if deltas[i] == 1:
             current_run_len += 1
-        else:
-            if current_run_len > 
+            if i < last_pos:
+                continue
+        # If run terminates or we are at the last pos -> check max run
+        # Update run to be max run if its the longest
+        if current_run_len > max_run_len:
+            max_run_len = current_run_len
+            max_run_pos = current_run_pos
+
+        # Update a new current run (last pos and delta == 1 will get updated but irrelevant)
+        current_run_pos = i + 1
+        current_run_len = 1
+    print(max_run_pos, max_run_len)
+    return round(np.median(start_dates[max_run_pos:max_run_pos + max_run_len]))
     # start_dates = start_dates.tolist()
     # if (nums := len(start_dates)) == 1:
     #     return start_dates[0]
