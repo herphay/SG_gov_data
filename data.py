@@ -45,25 +45,54 @@ def main():
     ...
 
 
+def pull_all_hdb_data() -> pd.DataFrame:
+    datasetIds = [
+        gov_sg_data_ref.hdb0.datasetId,
+        gov_sg_data_ref.hdb1.datasetId,
+        gov_sg_data_ref.hdb2.datasetId,
+        gov_sg_data_ref.hdb3.datasetId,
+        gov_sg_data_ref.hdb.datasetId,
+                  ]
+    data_list = [gov_data_puller(datasetId) for datasetId in datasetIds]
+    resales = pd.concat(data_list[:4], join='inner', ignore_index=True)
+    
+    # Update latest resale df to standard convention
+    data_list[4]['remaining_lease'] = parse_remaining_lease(data_list[4]['remaining_lease'])
+    resales = pd.concat([resales, data_list[4]], ignore_index=True)
+
+    # standardize all date conventions
+    resales['month'] = parse_transaction_month(resales['month'])
+    resales['lease_commence_date'] = resales['lease_commence_date'] * 12
+    
+    # Find and merge lease_start_date
+    lsd = find_lease_start_date(method='weighted_avg')
+    resales = pd.merge(resales, lsd, 'left', on=['street_name', 'block'])
+
+    return resales
+
 def database_setup():
+    resales = pull_all_hdb_data()
+
     with sqlite3.connect('hdb_data.db') as con:
         table_creation = """
-        CREATE TABLE IF NOT EXISTS resale (
-            transaction_id INTEGER PRIMARY KEY,
-            month TEXT,
-            town TEXT,
-            flat_type TEXT,
-            block TEXT,
-            street_name TEXT,
-            storey_range TEXT,
-            floor_area_sqm FLOAT,
-            flat_model TEXT,
-            lease_commence_date INTEGER,
-            remaining_lease INTEGER,
-            resale_price FLOAT
+        CREATE TABLE IF NOT EXISTS resales (
+            transaction_id          INTEGER PRIMARY KEY,
+            month                   INTEGER,
+            town                    TEXT,
+            flat_type               TEXT,
+            block                   TEXT,
+            street_name             TEXT,
+            storey_range            TEXT,
+            floor_area_sqm          FLOAT,
+            flat_model              TEXT,
+            lease_commence_date     INTEGER,
+            remaining_lease         INTEGER,
+            resale_price            FLOAT
         );
         """
         con.execute(table_creation)
+        resales.to_sql('resales', con=con, if_exists='replace')
+        
 
 
 def gov_data_puller(
@@ -91,6 +120,7 @@ def parse_remaining_lease(
 def parse_transaction_month(
         month: pd.Series
     ) -> pd.Series:
+    #return df with each splitted item in col named 0, 1...
     dates = month.str.split('-', expand=True)
     dates = dates.astype(int)
     return dates[0] * 12 + dates[1]
