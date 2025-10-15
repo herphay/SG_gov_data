@@ -102,6 +102,37 @@ def database_setup():
         resales.to_sql('resales', con=con, if_exists='replace')
 
 
+def update_resale_data() -> None:
+    """
+    Pull the latest HDB resale data and update new entries into the database
+    """
+    with sqlite3.connect('hdb_data.db') as con:
+        sql = """
+        SELECT *
+        FROM resales
+        WHERE month = (SELECT MAX(month) FROM resales)
+        """
+        latest_trans = pd.read_sql_query(sql, con)
+    
+    latest_resale = gov_data_puller()
+    latest_resale['month'] = parse_transaction_month(latest_resale['month'])
+    latest_resale = latest_resale.loc[latest_resale['month'] >= latest_trans['month'][0]]
+
+    latest_resale['lease_commence_date'] = latest_resale['lease_commence_date'] * 12
+    latest_resale['remaining_lease'] = parse_remaining_lease(latest_resale['remaining_lease'])
+
+    lsd = find_lease_start_date(method='weighted_avg')
+    latest_resale = pd.merge(latest_resale, lsd, 'left', on=['street_name', 'block'])
+
+    f2icols = ['remaining_lease', 'lease_start_mth']
+    latest_trans[f2icols] = latest_trans[f2icols].astype(int)
+    latest_trans['fingerprint'] = latest_trans[latest_resale.columns].astype(str).agg(''.join, axis=1)
+    latest_resale['fingerprint'] = latest_resale.astype(str).agg(''.join, axis=1)
+
+    latest_resale = pd.merge(latest_resale, latest_trans[['fingerprint', 'index']], 'left', 
+                             on='fingerprint')
+    latest_resale = latest_resale.loc[latest_resale['index'].isna()]
+
 
 def gov_data_puller(
         datasetId: str = 'd_8b84c4ee58e3cfc0ece0d773c8ca6abc'
