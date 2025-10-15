@@ -3,6 +3,8 @@ import numpy as np
 
 import requests
 import json
+
+from typing import Literal
 from dataclasses import dataclass
 
 import sqlite3
@@ -45,7 +47,13 @@ def main():
     ...
 
 
-def pull_all_hdb_data() -> pd.DataFrame:
+def pull_all_hdb_data(
+        ls_method: Literal[
+            'weighted_avg',
+            'longest_median',
+            'mode'
+        ] = 'weighted_avg'
+    ) -> pd.DataFrame:
     datasetIds = [
         gov_sg_data_ref.hdb0.datasetId,
         gov_sg_data_ref.hdb1.datasetId,
@@ -65,7 +73,7 @@ def pull_all_hdb_data() -> pd.DataFrame:
     resales['lease_commence_date'] = resales['lease_commence_date'] * 12
     
     # Find and merge lease_start_date
-    lsd = find_lease_start_date(method='weighted_avg')
+    lsd = find_lease_start_date(method=ls_method)
     resales = pd.merge(resales, lsd, 'left', on=['street_name', 'block'])
 
     return resales
@@ -92,7 +100,7 @@ def database_setup():
         """
         con.execute(table_creation)
         resales.to_sql('resales', con=con, if_exists='replace')
-        
+
 
 
 def gov_data_puller(
@@ -127,7 +135,11 @@ def parse_transaction_month(
 
 
 def find_lease_start_date(
-        method: str = 'weighted_avg'
+        method: Literal[
+            'weighted_avg',
+            'longest_median',
+            'mode'
+            ] = 'weighted_avg'
     ) -> pd.DataFrame:
     latest_resale = gov_data_puller(datasetId='d_8b84c4ee58e3cfc0ece0d773c8ca6abc')
     latest_resale['rlease_mth'] = parse_remaining_lease(latest_resale['remaining_lease'])
@@ -228,6 +240,43 @@ def find_median_lease_start(
     #             del start_dates[i]
 
     #     return int(np.median(start_dates))
+
+
+def lease_start_method_tester():
+    methods = ['weighted_avg', 'longest_median', 'mode']
+    results = [pull_all_hdb_data(method) for method in methods]
+    print('all data pulled')
+
+    for m, df in zip(methods, results):
+        df = df.loc[~df['remaining_lease'].isna(), ['month', 'lease_start_mth', 'remaining_lease']]
+        # +ve delta means calculated remaining lease is longer than actual
+        # -ve delta means calculated remaining lease is shorter than actual
+        df['delta'] = df['lease_start_mth'] + 99 * 12 - df['month'] - df['remaining_lease']
+        
+        summary = df['delta'].value_counts().sort_index()
+
+        print(f"\nFor method '{m}':")
+        print(f'Variance is: {df['delta'].var():.3f}')
+        print(f'0mth % is: {summary.loc[abs(summary.index) < 1].sum() / summary.sum() * 100:.2f}%')
+        print(f'1mth % is: {summary.loc[abs(summary.index) < 2].sum() / summary.sum() * 100:.2f}%')
+        print(f'2mth % is: {summary.loc[abs(summary.index) < 3].sum() / summary.sum() * 100:.2f}%')
+
+    return results
+    # For method weighted_avg:
+    # Variance is: 0.491
+    # 0mth % is: 56.03%
+    # 1mth % is: 99.13%
+    # 2mth % is: 99.85%
+    # For method longest_median:
+    # Variance is: 0.545
+    # 0mth % is: 50.53%
+    # 1mth % is: 98.45%
+    # 2mth % is: 99.82%
+    # For method mode:
+    # Variance is: 0.563
+    # 0mth % is: 57.71%
+    # 1mth % is: 97.70%
+    # 2mth % is: 99.75%
 
 
 if __name__ == '__main__':
