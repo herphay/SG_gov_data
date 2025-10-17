@@ -75,10 +75,11 @@ def pull_all_hdb_data(
     # Find and merge lease_start_date
     lsd = find_lease_start_date(method=ls_method)
     resales = pd.merge(resales, lsd, 'left', on=['street_name', 'block'])
-
+    
     return resales
 
-def database_setup():
+
+def database_setup() -> None:
     resales = pull_all_hdb_data()
 
     with sqlite3.connect('hdb_data.db') as con:
@@ -95,11 +96,56 @@ def database_setup():
             flat_model              TEXT,
             lease_commence_date     INTEGER,
             remaining_lease         INTEGER,
-            resale_price            FLOAT
+            resale_price            FLOAT,
+            lease_start_mth         INTEGER
         );
         """
         con.execute(table_creation)
-        resales.to_sql('resales', con=con, if_exists='replace')
+        # resales.to_sql('resales', con=con, if_exists='replace')
+    
+    db_insertion(resales)
+
+
+def db_insertion(
+        resale_data: pd.DataFrame,
+    ) -> None:
+    cols = ['month', 'town', 'flat_type', 'block', 'street_name', 'storey_range', 
+            'floor_area_sqm', 'flat_model', 'lease_commence_date', 'resale_price', 
+            'remaining_lease', 'lease_start_mth']
+    if resale_data.shape[1] != 12: # or ~(resale_data.columns == cols).all()
+        raise ValueError('Incorrect number of columns in DataFrame')
+    
+    try:
+        resale_data = resale_data[cols]
+    except KeyError:
+        raise ValueError('Column sequence error')
+
+    # f2icols = ['remaining_lease', 'lease_start_mth']
+    # resale_data[f2icols] = resale_data[f2icols].astype(pd.Int64Dtype())
+    rows = resale_data.shape[0]
+    resale_data = list(resale_data.itertuples(index=False, name=None))
+
+    insertion_sql = """
+    INSERT INTO resales (
+        month,
+        town,
+        flat_type,
+        block,
+        street_name,
+        storey_range,
+        floor_area_sqm,
+        flat_model,
+        lease_commence_date,
+        resale_price,
+        remaining_lease,
+        lease_start_mth
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+    """
+
+    with sqlite3.connect('hdb_data.db') as con:
+        con.executemany(insertion_sql, resale_data)
+    print(f'Successfully inserted {rows} rows into the resales database')
 
 
 def update_resale_data() -> None:
@@ -115,23 +161,26 @@ def update_resale_data() -> None:
         latest_trans = pd.read_sql_query(sql, con)
     
     latest_resale = gov_data_puller()
+    lsd = find_lease_start_date(method='weighted_avg', latest_resale=latest_resale)
+    
     latest_resale['month'] = parse_transaction_month(latest_resale['month'])
     latest_resale = latest_resale.loc[latest_resale['month'] >= latest_trans['month'][0]]
 
     latest_resale['lease_commence_date'] = latest_resale['lease_commence_date'] * 12
     latest_resale['remaining_lease'] = parse_remaining_lease(latest_resale['remaining_lease'])
-
-    lsd = find_lease_start_date(method='weighted_avg')
+    
     latest_resale = pd.merge(latest_resale, lsd, 'left', on=['street_name', 'block'])
 
     f2icols = ['remaining_lease', 'lease_start_mth']
-    latest_trans[f2icols] = latest_trans[f2icols].astype(int)
+    # latest_trans[f2icols] = latest_trans[f2icols].astype(int)
     latest_trans['fingerprint'] = latest_trans[latest_resale.columns].astype(str).agg(''.join, axis=1)
     latest_resale['fingerprint'] = latest_resale.astype(str).agg(''.join, axis=1)
 
-    latest_resale = pd.merge(latest_resale, latest_trans[['fingerprint', 'index']], 'left', 
-                             on='fingerprint')
-    latest_resale = latest_resale.loc[latest_resale['index'].isna()]
+    latest_resale = pd.merge(latest_resale, latest_trans[['fingerprint', 'transaction_id']], 
+                             'left', on='fingerprint')
+    latest_resale = latest_resale.loc[latest_resale['transaction_id'].isna()]
+    # return latest_resale[latest_trans.columns[1:-1]]
+    db_insertion(latest_resale[latest_trans.columns[1:-1]])
 
 
 def gov_data_puller(
@@ -170,9 +219,13 @@ def find_lease_start_date(
             'weighted_avg',
             'longest_median',
             'mode'
-            ] = 'weighted_avg'
+            ] = 'weighted_avg',
+        latest_resale: pd.DataFrame | None = None
     ) -> pd.DataFrame:
-    latest_resale = gov_data_puller(datasetId='d_8b84c4ee58e3cfc0ece0d773c8ca6abc')
+    if latest_resale is None:
+        latest_resale = gov_data_puller(datasetId='d_8b84c4ee58e3cfc0ece0d773c8ca6abc')
+    else:
+        latest_resale = latest_resale.copy()
     latest_resale['rlease_mth'] = parse_remaining_lease(latest_resale['remaining_lease'])
     latest_resale['tdate_mth'] = parse_transaction_month(latest_resale['month'])
     latest_resale['lease_start_mth'] =  latest_resale['tdate_mth'] - \
